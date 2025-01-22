@@ -1,4 +1,4 @@
-﻿using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using System.Collections.Generic;
 using System.IO;
@@ -10,6 +10,8 @@ using iText.Layout.Element;
 using iText.Layout.Properties;
 using WebApiWithPdf.Data;
 using WebApiWithPdf.Models;
+using iText.Kernel.Events;
+using iText.Kernel.Pdf.Canvas;
 
 namespace WebApiWithPdf.Controllers
 {
@@ -62,16 +64,15 @@ namespace WebApiWithPdf.Controllers
                 var pdf = new PdfDocument(writer);
                 var document = new Document(pdf);
 
+                // Add Event Handler for Page Numbers
+                pdf.AddEventHandler(PdfDocumentEvent.END_PAGE, new PageNumberEventHandler(document));
+
                 // Add Title
-                document.Add(new Paragraph("User Records List                                    Page no:1")
-
-
+                document.Add(new Paragraph("User Records List")
                     .SetTextAlignment(TextAlignment.CENTER)
                     .SetBold()
                     .SetFontSize(18)
                     .SetMarginBottom(20));
-
-
 
                 // Create Table with Column Headers
                 var table = new Table(UnitValue.CreatePercentArray(new float[] { 1, 3, 3, 1, 3 }))
@@ -102,5 +103,40 @@ namespace WebApiWithPdf.Controllers
                 return File(pdfBytes, "application/pdf", "Records.pdf");
             }
         }
+
+        // Event Handler for Page Numbers
+        private class PageNumberEventHandler : IEventHandler
+        {
+            private readonly Document _document;
+
+            public PageNumberEventHandler(Document document)
+            {
+                _document = document;
+            }
+
+            public void HandleEvent(Event @event)
+            {
+                var pdfEvent = (PdfDocumentEvent)@event;
+                var page = pdfEvent.GetPage();
+                var pdfCanvas = new PdfCanvas(page.NewContentStreamAfter(), page.GetResources(), pdfEvent.GetDocument());
+                var pageSize = page.GetPageSize(); // Get the page size (Rectangle)
+
+                // Correctly create Canvas
+                var canvas = new Canvas(pdfCanvas, pageSize);
+
+                int pageNumber = pdfEvent.GetDocument().GetPageNumber(page);
+
+                // Display page number at the top-right corner
+                canvas
+                    .ShowTextAligned($"Page no: {pageNumber}",
+                        pageSize.GetRight() - 40,  // Near the right margin
+                        pageSize.GetTop() - 20,   // Slightly below the top margin
+                        TextAlignment.RIGHT)
+                    .Close();
+            }
+
+        }
+
+
     }
 }
