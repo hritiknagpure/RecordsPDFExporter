@@ -1,15 +1,12 @@
+using ClosedXML.Excel;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
-using System.Collections.Generic;
-using System.IO;
-using System.Linq;
-using System.Threading.Tasks;
+using WebApiWithPdf.Data;
+using WebApiWithPdf.Models;
 using iText.Kernel.Pdf;
 using iText.Layout;
 using iText.Layout.Element;
 using iText.Layout.Properties;
-using WebApiWithPdf.Data;
-using WebApiWithPdf.Models;
 using iText.Kernel.Events;
 using iText.Kernel.Pdf.Canvas;
 
@@ -52,8 +49,8 @@ namespace WebApiWithPdf.Controllers
             return Ok(record);
         }
 
-        // GET: api/records/download
-        [HttpGet("download")]
+        // Download records as PDF
+        [HttpGet("download/pdf")]
         public async Task<IActionResult> DownloadRecordsAsPdf()
         {
             var records = await _context.Records.ToListAsync();
@@ -64,17 +61,18 @@ namespace WebApiWithPdf.Controllers
                 var pdf = new PdfDocument(writer);
                 var document = new Document(pdf);
 
-                // Add Event Handler for Page Numbers
                 pdf.AddEventHandler(PdfDocumentEvent.END_PAGE, new PageNumberEventHandler(document));
 
-                // Add Title
+                var currentDateTime = DateTime.Now.ToString("MM/dd/yyyy hh:mm:ss tt");
+
                 document.Add(new Paragraph("User Records List")
                     .SetTextAlignment(TextAlignment.CENTER)
                     .SetBold()
                     .SetFontSize(18)
-                    .SetMarginBottom(20));
+                    .SetMarginBottom(5));
 
-                // Create Table with Column Headers
+                // No longer adding the date/time at the top of the document, as we will add it below the page number
+
                 var table = new Table(UnitValue.CreatePercentArray(new float[] { 1, 3, 3, 1, 3 }))
                     .UseAllAvailableWidth()
                     .SetMarginTop(10);
@@ -85,7 +83,6 @@ namespace WebApiWithPdf.Controllers
                 table.AddHeaderCell(new Cell().Add(new Paragraph("Age").SetBold()));
                 table.AddHeaderCell(new Cell().Add(new Paragraph("Phone Number").SetBold()));
 
-                // Populate Table with Records
                 foreach (var record in records)
                 {
                     table.AddCell(new Paragraph(record.Id.ToString()));
@@ -104,6 +101,46 @@ namespace WebApiWithPdf.Controllers
             }
         }
 
+        // Download records as Excel
+        [HttpGet("download/excel")]
+        public async Task<IActionResult> DownloadRecordsAsExcel()
+        {
+            var records = await _context.Records.ToListAsync();
+
+            using (var memoryStream = new MemoryStream())
+            {
+                using (var workbook = new XLWorkbook())
+                {
+                    var worksheet = workbook.AddWorksheet("User Records");
+
+                    // Add header row
+                    worksheet.Cell(1, 1).Value = "ID";
+                    worksheet.Cell(1, 2).Value = "Name";
+                    worksheet.Cell(1, 3).Value = "Surname";
+                    worksheet.Cell(1, 4).Value = "Age";
+                    worksheet.Cell(1, 5).Value = "Phone Number";
+
+                    // Populate data
+                    int row = 2;
+                    foreach (var record in records)
+                    {
+                        worksheet.Cell(row, 1).Value = record.Id;
+                        worksheet.Cell(row, 2).Value = record.Name;
+                        worksheet.Cell(row, 3).Value = record.Surname;
+                        worksheet.Cell(row, 4).Value = record.Age;
+                        worksheet.Cell(row, 5).Value = record.PhoneNumber;
+                        row++;
+                    }
+
+                    // Save the file to the memory stream
+                    workbook.SaveAs(memoryStream);
+                }
+
+                var excelBytes = memoryStream.ToArray();
+                return File(excelBytes, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "Records.xlsx");
+            }
+        }
+
         // Event Handler for Page Numbers
         private class PageNumberEventHandler : IEventHandler
         {
@@ -119,9 +156,8 @@ namespace WebApiWithPdf.Controllers
                 var pdfEvent = (PdfDocumentEvent)@event;
                 var page = pdfEvent.GetPage();
                 var pdfCanvas = new PdfCanvas(page.NewContentStreamAfter(), page.GetResources(), pdfEvent.GetDocument());
-                var pageSize = page.GetPageSize(); // Get the page size (Rectangle)
+                var pageSize = page.GetPageSize();
 
-                // Correctly create Canvas
                 var canvas = new Canvas(pdfCanvas, pageSize);
 
                 int pageNumber = pdfEvent.GetDocument().GetPageNumber(page);
@@ -129,14 +165,19 @@ namespace WebApiWithPdf.Controllers
                 // Display page number at the top-right corner
                 canvas
                     .ShowTextAligned($"Page no: {pageNumber}",
-                        pageSize.GetRight() - 40,  // Near the right margin
-                        pageSize.GetTop() - 20,   // Slightly below the top margin
+                        pageSize.GetRight() - 40,
+                        pageSize.GetTop() - 20,
+                        TextAlignment.RIGHT)
+                    .Close();
+
+                // Display the current date and time below the page number
+                canvas
+                    .ShowTextAligned($"Date: {DateTime.Now:MM/dd/yyyy hh:mm:ss tt}",
+                        pageSize.GetRight() - 40,
+                        pageSize.GetTop() - 40,
                         TextAlignment.RIGHT)
                     .Close();
             }
-
         }
-
-
     }
 }
